@@ -20,8 +20,10 @@ from distutils.version import LooseVersion
 import getopt
 import glob
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 __version__ = "$Revision$"
@@ -531,13 +533,14 @@ class Options:
         self.showlist = False
         self.stdin = False
         self.stdout = False
+        self.temphome = False
         self.template = None
         self.timeout = 6
         self.verbose = 0
 
         ### Get options from the commandline
         try:
-            opts, args = getopt.getopt (args, 'c:Dd:e:F:f:hi:Llo:np:s:T:t:vV',
+            opts, args = getopt.getopt (args, 'c:Dd:e:F:f:Hhi:Llo:np:s:T:t:vV',
                 ['connection=', 'debug', 'doctype=', 'export=', 'field=', 'format=',
                  'help', 'import=', 'home=', 'listener', 'no-launch', 'output=',
                  'outputpath', 'password=', 'pipe=', 'port=', 'preserve',
@@ -581,6 +584,8 @@ class Options:
                 self.fields[l[0]] = l[1]
             elif opt in ['-f', '--format']:
                 self.format = arg
+            elif opt in ['-H']:
+                self.temphome = True
             elif opt in ['--home']:
                 self.home = arg
             elif opt in ['-i', '--import']:
@@ -647,11 +652,14 @@ class Options:
             else:
                 print ('"%s" either doesn\'t exist or is not accessible' % self.home, file=sys.stderr)
         
+        if 'HOME' not in os.environ or not os.access(os.environ['HOME'], os.R_OK | os.W_OK) or self.temphome:
+            # Create a temporary directory to use as HOME
+            os.environ['HOME'] = tempfile.mkdtemp('', 'unoconv.')
+        
         print ('Using HOME environment variable: %s' % os.environ['HOME'], file=sys.stderr)
         
         if not self.listener and not self.showlist and not self.stdin and self.doctype != 'list' and not self.filenames:
             print('unoconv: you have to provide a filename or url as argument', file=sys.stderr)
-
             print('Try `unoconv -h\' for more information.', file=sys.stderr)
             sys.exit(255)
 
@@ -719,6 +727,7 @@ unoconv options:
   -F, --field=name=value   replace user-defined text field with value
                              eg. -F Client_Name="Oracle"
       --home=path          specify a path to use as HOME
+  -H                       generate and use a temporary HOME
   -i, --import=string      set import filter option string
                              eg. -i utf8
   -l, --listener           start a permanent listener to use by unoconv clients
@@ -1182,7 +1191,11 @@ def die(ret, msg=None):
                 os.kill(ooproc.pid, 9)
             info(3, 'Waiting for %s with pid %s to disappear.' % (ooproc.pid, product.ooName))
             ooproc.wait()
-
+    
+    # check for and remove temporary HOME
+    if os.path.basename(os.environ['HOME']).startswith('unoconv.'):
+        shutil.rmtree(os.environ['HOME'])
+    
     # allow Python GC to garbage collect pyuno object *before* exit call
     # which avoids random segmentation faults --vpa
     convertor = None
